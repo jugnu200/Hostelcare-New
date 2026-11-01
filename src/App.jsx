@@ -545,6 +545,7 @@ async function submit(event) {
 function LoginPage({ admin = false }) {
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [message, setMessage] = useState("");
 
   async function submit(event) {
@@ -624,10 +625,31 @@ function LoginPage({ admin = false }) {
               <label htmlFor="identifier">{admin ? "Email or Phone Number *" : "Email Address *"}</label>
               <input id="identifier" value={identifier} onChange={(e) => setIdentifier(e.target.value)} placeholder={admin ? "Enter email or phone number" : "Enter registered email"} required />
             </div>
-            <div className="form-field">
+            
+          <div className="form-field">
               <label htmlFor="loginPassword">Password *</label>
-              <input id="loginPassword" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" placeholder="Enter your password" required />
-            </div>
+
+              <div className="password-input-wrapper">
+              <input
+              id="loginPassword"
+              type={showPassword ? "text" : "password"}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="current-password"
+              placeholder="Enter your password"
+              required
+             />
+
+             <button
+             type="button"
+             className="password-toggle"
+             onClick={() => setShowPassword(!showPassword)}
+             aria-label={showPassword ? "Hide password" : "Show password"}
+             >
+             {showPassword ? "🙈" : "👁️"}
+            </button>
+         </div>
+          </div>
             <div className="forgot-password"><a href="#/forgot-password">Forgot password?</a></div>
             {message && <div className="form-message" role="status">{message}</div>}
             <button className="button button-primary submit-button" type="submit">Login →</button>

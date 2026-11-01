@@ -646,7 +646,7 @@ function LoginPage({ admin = false }) {
              onClick={() => setShowPassword(!showPassword)}
              aria-label={showPassword ? "Hide password" : "Show password"}
              >
-             {showPassword ? "🙈" : "👁️"}
+             {showPassword ? "Hide" : "Show"}
             </button>
          </div>
           </div>

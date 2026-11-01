@@ -2487,6 +2487,7 @@ footer {
   }
 }
 
+
 /* Show/Hide Password Button */
 .password-input-wrapper {
   position: relative;
@@ -2497,23 +2498,184 @@ footer {
 
 .password-input-wrapper input {
   width: 100%;
-  padding-right: 55px;
+  padding-right: 85px !important;
+  box-sizing: border-box;
 }
 
 .password-toggle {
   position: absolute;
-  right: 12px;
+  right: 10px;
   top: 50%;
   transform: translateY(-50%);
+  width: 65px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 !important;
+  margin: 0;
   border: none;
+  border-radius: 6px;
   background: transparent;
-  cursor: pointer;
-  font-size: 21px;
-  padding: 8px;
-  z-index: 2;
   color: #24364b;
+  font-size: 16px !important;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 2;
 }
 
-.password-toggle:hover {
+.password-toggle:hover,
+.password-toggle:focus {
   background: transparent;
+}
+/*
+   HOSTELCARE MOBILE DASHBOARD LAYOUT
+ */
+
+@media (max-width: 768px) {
+
+  /* Keep sidebar and content side by side */
+  .student-dashboard {
+    display: flex;
+    flex-direction: row;
+    min-height: 100vh;
+    align-items: stretch;
+  }
+
+  /* Left sidebar */
+  .student-sidebar {
+    width: 145px;
+    min-width: 145px;
+    flex: 0 0 145px;
+    padding: 18px 8px;
+    box-sizing: border-box;
+  }
+
+  .student-brand h2 {
+    font-size: 19px;
+  }
+
+  .student-brand p {
+    font-size: 12px;
+    margin-bottom: 22px;
+  }
+
+  .student-sidebar nav {
+    display: flex;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    gap: 8px;
+  }
+
+  .student-sidebar button {
+    width: 100%;
+    padding: 11px 7px;
+    font-size: 12px;
+    text-align: center;
+    box-sizing: border-box;
+  }
+
+  /* Right dashboard content */
+  .student-main {
+    flex: 1;
+    min-width: 0;
+    padding: 14px 10px;
+    box-sizing: border-box;
+  }
+
+  .student-topbar {
+    margin-bottom: 18px;
+    padding-bottom: 12px;
+  }
+
+  .student-topbar h2 {
+    font-size: 19px;
+  }
+
+  .student-overview h1 {
+    font-size: 21px;
+  }
+
+  .student-overview > p {
+    font-size: 13px;
+  }
+
+  /* Dashboard statistics */
+  .student-stats {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    margin: 18px 0;
+  }
+
+  .student-stat-card {
+    padding: 15px 10px;
+  }
+
+  .student-stat-card h3 {
+    font-size: 25px;
+  }
+
+  .student-stat-card p {
+    font-size: 13px;
+  }
+
+  /* Dashboard content cards */
+  .student-content-card {
+    padding: 14px 10px;
+    margin-top: 15px;
+    margin-bottom: 15px;
+  }
+
+  .student-content-card h2 {
+    font-size: 18px;
+  }
+
+  /* Forms */
+  .complaint-form,
+  .profile-form {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .complaint-form input,
+  .complaint-form select,
+  .complaint-form textarea,
+  .profile-form input {
+    font-size: 13px;
+    padding: 10px;
+  }
+
+  /* Complaint actions */
+  .complaint-actions {
+    flex-direction: column;
+  }
+
+  .complaint-actions button {
+    width: 100%;
+  }
+}
+
+/* Very small phones */
+@media (max-width: 380px) {
+
+  .student-sidebar {
+    width: 115px;
+    min-width: 115px;
+    flex-basis: 115px;
+    padding: 15px 5px;
+  }
+
+  .student-sidebar button {
+    font-size: 11px;
+    padding: 10px 4px;
+  }
+
+  .student-main {
+    padding: 10px 7px;
+  }
+
+  .student-stat-card {
+    padding: 12px 7px;
+  }
 }

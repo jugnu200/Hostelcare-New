@@ -2,6 +2,8 @@
 import { HashRouter, Routes, Route } from "react-router-dom";
 import { useState } from "react";
 import "./App.css";
+import { supabase } from "./lib/supabase";
+import StudentDashboard from "./StudentDashboard";
 
 const hostels = [
   "Abdullah Hall",
@@ -321,26 +323,109 @@ function RegistrationPage({ admin = false }) {
     setMessage("");
   }
 
-  function submit(event) {
-    event.preventDefault();
 
-    if (form.password !== form.confirmPassword) {
-      setMessage("Passwords do not match.");
-      return;
-    }
+async function submit(event) {
+  event.preventDefault();
 
-    if (form.password.length < 8) {
-      setMessage("Password must contain at least 8 characters.");
-      return;
-    }
-
-    setMessage(
-      admin
-        ? "Form validation passed. Admin approval and account creation will work after backend setup."
-        : "Form validation passed. Email verification and student validation will work after backend setup."
-    );
+  if (form.password !== form.confirmPassword) {
+    setMessage("Passwords do not match.");
+    return;
   }
 
+  if (form.password.length < 8) {
+    setMessage("Password must contain at least 8 characters.");
+    return;
+  }
+
+  // Admin registration will be connected separately.
+  if (admin) {
+    setMessage("Admin registration will be connected after student registration.");
+    return;
+  }
+
+  // Step 1: Verify the AMU enrollment number.
+  const { data: verified, error: verifyError } = await supabase.rpc(
+    "verify_student_enrollment",
+    {
+      p_enrollment_no: form.enrollment.trim(),
+    }
+  );
+
+  if (verifyError) {
+    console.error("Enrollment verification error:", verifyError);
+    setMessage("Unable to verify enrollment. Please try again.");
+    return;
+  }
+
+  if (!verified) {
+    setMessage("You are not a student of AMU.");
+    return;
+  }
+
+  // Step 2: Create the student's authentication account.
+  const { data: authData, error: authError } =
+    await supabase.auth.signUp({
+      email: form.email.trim(),
+      password: form.password,
+      options: {
+        data: {
+          full_name: form.name.trim(),
+          enrollment_no: form.enrollment.trim(),
+        },
+      },
+    });
+
+  if (authError) {
+    console.error("Signup error:", authError);
+    setMessage(authError.message);
+    return;
+  }
+
+  if (!authData.session || !authData.user) {
+    setMessage(
+      "Account created, but no active session was returned. Check Supabase email confirmation settings."
+    );
+    return;
+  }
+
+  // Step 3: Save the student's details in the profiles table.
+  const { error: profileError } = await supabase
+    .from("profiles")
+    .insert({
+      id: authData.user.id,
+      full_name: form.name.trim(),
+      enrollment_no: form.enrollment.trim(),
+      email: form.email.trim(),
+      hostel: form.hostel,
+      block: form.block.trim(),
+      room: form.room.trim(),
+      role: "student",
+      approval_status: "approved",
+    });
+
+  if (profileError) {
+    console.error("Profile creation error:", profileError);
+    setMessage(
+      "Authentication account created, but profile saving failed. Please contact the administrator."
+    );
+    return;
+  }
+
+  setMessage("Student account created successfully! You can now log in.");
+
+  // Step 4: Clear the registration form.
+  setForm({
+    name: "",
+    enrollment: "",
+    phone: "",
+    email: "",
+    hostel: "",
+    block: "",
+    room: "",
+    password: "",
+    confirmPassword: "",
+  });
+}
   return (
     <>
       <Header />
@@ -462,11 +547,65 @@ function LoginPage({ admin = false }) {
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
 
-  function submit(event) {
-    event.preventDefault();
-    setMessage("Login will work after we connect Supabase authentication.");
-  }
+  async function submit(event) {
+  event.preventDefault();
+  setMessage("Checking your account...");
 
+  try {
+    // Step 1: Sign in using Supabase Authentication
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: identifier.trim(),
+      password: password,
+    });
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    // Step 2: Get the user's profile
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("role, approval_status, full_name")
+      .eq("id", data.user.id)
+      .single();
+
+    if (profileError || !profile) {
+      await supabase.auth.signOut();
+      setMessage("Profile not found. Please contact the administrator.");
+      return;
+    }
+
+    // Step 3: Check the account role
+    if (admin && profile.role !== "admin") {
+      await supabase.auth.signOut();
+      setMessage("This account does not have administrator access.");
+      return;
+    }
+
+    if (!admin && profile.role !== "student") {
+      await supabase.auth.signOut();
+      setMessage("Please use the correct login portal.");
+      return;
+    }
+
+    // Step 4: Check admin approval
+    if (admin && profile.approval_status !== "approved") {
+      await supabase.auth.signOut();
+      setMessage("Your admin account is waiting for approval.");
+      return;
+    }
+
+    // Step 5: Login successful
+    setMessage("Login successful!");
+
+    window.location.hash = admin ? "#/admin-dashboard" : "#/student-dashboard";
+
+  } catch (error) {
+    console.error("Login error:", error);
+    setMessage("Something went wrong. Please try again.");
+  }
+}
   return (
     <>
       <Header />
@@ -565,6 +704,7 @@ function AppRoutes() {
       <Route path="/admin-register" element={<RegistrationPage admin />} />
       <Route path="/admin-login" element={<LoginPage admin />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/student-dashboard" element={<StudentDashboard />} />
       <Route path="*" element={<NotFoundPage />} />
     </Routes>
   );

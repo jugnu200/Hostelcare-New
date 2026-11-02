@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import "./StudentDashboard.css";
 import { supabase } from "./lib/supabase";
 
 export default function StudentDashboard() {
@@ -18,6 +19,8 @@ export default function StudentDashboard() {
     resolved: "Resolved",
   };
   const [activePage, setActivePage] = useState("Dashboard");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const sidebarRef = useRef(null);
   const [complaints, setComplaints] = useState([]);
   const [complaintDraft, setComplaintDraft] = useState(null);
 
@@ -52,8 +55,6 @@ export default function StudentDashboard() {
 
   const [form, setForm] = useState({
     type: "",
-    block: "",
-    room: "",
     details: "",
   });
 
@@ -65,6 +66,34 @@ export default function StudentDashboard() {
     "Change Password",
     "Help & Support",
   ];
+
+  // Close the mobile menu when the user clicks outside the sidebar/menu button.
+  useEffect(() => {
+    function handleOutsideClick(event) {
+      if (
+        mobileMenuOpen &&
+        sidebarRef.current &&
+        !sidebarRef.current.contains(event.target) &&
+        !event.target.closest(".student-menu-toggle")
+      ) {
+        setMobileMenuOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handleOutsideClick);
+    document.addEventListener("touchstart", handleOutsideClick);
+
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideClick);
+      document.removeEventListener("touchstart", handleOutsideClick);
+    };
+  }, [mobileMenuOpen]);
+
+  function navigateTo(page) {
+    setActivePage(page);
+    setMessage("");
+    setMobileMenuOpen(false);
+  }
 
   // Save profile in browser
   useEffect(() => {
@@ -216,12 +245,17 @@ useEffect(() => {
     (item) => item.status === "Resolved"
   ).length;
 
-  // Generate complaint preview
+  // Generate complaint using the hostel and room details saved in My Profile.
   function generateComplaint() {
     setMessage("");
 
-    if (!form.type || !form.block.trim() || !form.room.trim()) {
-      setMessage("Please select a problem and enter your block and room number.");
+    if (!form.type) {
+      setMessage("Please select a problem.");
+      return;
+    }
+
+    if (!profile.hostel || !profile.block || !profile.room_number) {
+      setMessage("Please complete your hostel, block and room details in My Profile first.");
       return;
     }
 
@@ -229,11 +263,11 @@ useEffect(() => {
 
 Student Name: ${profile.full_name || "Student"}
 Enrollment Number: ${profile.enrollment_no || "Not available"}
-Hostel: ${profile.hostel || "Not available"}
+Hostel: ${profile.hostel}
 
 Problem: ${form.type}
-Block / Building: ${form.block}
-Room Number: ${form.room}
+Block / Building: ${profile.block}
+Room Number: ${profile.room_number}
 
 Additional Details:
 ${form.details.trim() || "No additional details provided."}
@@ -270,8 +304,8 @@ async function submitComplaint() {
         student_id: user.id,
         complaint_type: form.type,
         hostel: profile.hostel || "Not provided",
-        block: form.block,
-        room: form.room,
+        block: profile.block,
+        room: profile.room_number,
         description: form.details,
         complaint_message: complaintDraft,
         status: "Pending"
@@ -300,8 +334,6 @@ async function submitComplaint() {
 
     setForm({
       type: "",
-      block: "",
-      room: "",
       details: ""
     });
 
@@ -313,7 +345,39 @@ async function submitComplaint() {
     console.error("Complaint submission error:", error);
     setMessage(error.message || "Failed to submit complaint.");
   }
-}  // Copy generated complaint
+}  // Students may delete only their own complaints while status is Pending.
+  async function deleteComplaint(complaint) {
+    if (complaint.status !== "Pending") {
+      setMessage("Only pending complaints can be deleted.");
+      return;
+    }
+
+    const confirmed = window.confirm("Are you sure you want to delete this pending complaint?");
+    if (!confirmed) return;
+
+    try {
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError) throw userError;
+      if (!user) throw new Error("Please log in again.");
+
+      const { error } = await supabase
+        .from("complaints")
+        .delete()
+        .eq("id", complaint.id)
+        .eq("student_id", user.id)
+        .eq("status", "Pending");
+
+      if (error) throw error;
+
+      setComplaints((current) => current.filter((item) => item.id !== complaint.id));
+      setMessage("Pending complaint deleted successfully.");
+    } catch (error) {
+      console.error("Complaint deletion error:", error);
+      setMessage(error.message || "Unable to delete this complaint.");
+    }
+  }
+
+  // Copy generated complaint
   async function copyComplaint() {
     if (!complaintDraft) return;
 
@@ -399,7 +463,7 @@ async function submitComplaint() {
     <div className="student-dashboard">
 
       {/* SIDEBAR */}
-      <aside className="student-sidebar">
+      <aside ref={sidebarRef} className={`student-sidebar ${mobileMenuOpen ? "open" : ""}`}>
         <div className="student-brand">
           <img
             src={`${import.meta.env.BASE_URL}amu-logo.jpg`}
@@ -420,8 +484,7 @@ async function submitComplaint() {
               type="button"
               className={activePage === item ? "active" : ""}
               onClick={() => {
-                setActivePage(item);
-                setMessage("");
+                navigateTo(item);
               }}
             >
               {item}
@@ -442,8 +505,19 @@ async function submitComplaint() {
       <main className="student-main">
 
         <header className="student-topbar">
-          <h2>{activePage}</h2>
-          <span>Student Dashboard</span>
+          <div className="student-topbar-title">
+            <h2>{activePage}</h2>
+            <span>Student Dashboard</span>
+          </div>
+          <button
+            type="button"
+            className="student-menu-toggle"
+            aria-label="Open student menu"
+            aria-expanded={mobileMenuOpen}
+            onClick={() => setMobileMenuOpen((open) => !open)}
+          >
+            ⋮
+          </button>
         </header>
 
         {message && (
@@ -491,14 +565,14 @@ async function submitComplaint() {
 
               <button
                 className="button-primary"
-                onClick={() => setActivePage("New Complaint")}
+                onClick={() => navigateTo("New Complaint")}
               >
                 + Submit New Complaint
               </button>
 
               <button
                 className="button-primary"
-                onClick={() => setActivePage("My Complaints")}
+                onClick={() => navigateTo("My Complaints")}
               >
                 View My Complaints
               </button>
@@ -535,26 +609,6 @@ async function submitComplaint() {
                 <option>Broken Furniture</option>
                 <option>Other Problem</option>
               </select>
-
-              <label>Block / Building</label>
-
-              <input
-                value={form.block}
-                onChange={(e) =>
-                  setForm({ ...form, block: e.target.value })
-                }
-                placeholder="Enter your block name"
-              />
-
-              <label>Room Number</label>
-
-              <input
-                value={form.room}
-                onChange={(e) =>
-                  setForm({ ...form, room: e.target.value })
-                }
-                placeholder="Enter your room number"
-              />
 
               <label>Additional Details</label>
 
@@ -637,7 +691,7 @@ async function submitComplaint() {
 
                 <button
                   className="button-primary"
-                  onClick={() => setActivePage("New Complaint")}
+                  onClick={() => navigateTo("New Complaint")}
                 >
                   Submit Your First Complaint
                 </button>
@@ -676,6 +730,16 @@ async function submitComplaint() {
                       <summary>View Complaint</summary>
                       <pre>{complaint.message}</pre>
                     </details>
+
+                    {complaint.status === "Pending" && (
+                      <button
+                        type="button"
+                        className="student-delete-button"
+                        onClick={() => deleteComplaint(complaint)}
+                      >
+                        Delete Pending Complaint
+                      </button>
+                    )}
 
                   </div>
                 ))}
@@ -830,9 +894,9 @@ async function submitComplaint() {
             <div className="support-item">
               <h3>How do I submit a complaint?</h3>
               <p>
-                Open New Complaint, select your problem, enter your
-                block and room number, generate the complaint and
-                submit it.
+                Make sure your hostel, block and room details are saved in My Profile.
+                Then open New Complaint, select your problem, add details,
+                generate the complaint and submit it.
               </p>
             </div>
 

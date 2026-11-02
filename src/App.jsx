@@ -1,9 +1,10 @@
 
-import { HashRouter, Routes, Route } from "react-router-dom";
-import { useState } from "react";
+import { HashRouter, Routes, Route, useLocation } from "react-router-dom";
+import { useEffect, useState } from "react";
 import "./App.css";
 import { supabase } from "./lib/supabase";
 import StudentDashboard from "./StudentDashboard";
+import AdminDashboard from "./AdminDashboard";
 
 const hostels = [
   "Abdullah Hall",
@@ -42,6 +43,13 @@ const problems = [
 
 
 function Header() {
+  const location = useLocation();
+  const isDashboard = [
+    "/student-dashboard",
+    "/admin-dashboard",
+    "/super-admin-dashboard",
+  ].includes(location.pathname);
+
   return (
     <header className="site-header">
       <a className="brand" href="#/">
@@ -76,13 +84,16 @@ function Header() {
       
 
 <div className="header-actions">
-  <a className="header-login" href="#/student-login">
-    Student Login
-  </a>
-
-  <a className="button button-small" href="#/admin-login">
-    Admin Login
-  </a>
+  {!isDashboard && (
+    <>
+      <a className="header-login" href="#/student-login">
+        Student Login
+      </a>
+      <a className="button button-small" href="#/admin-login">
+        Admin Login
+      </a>
+    </>
+  )}
 
   <div className="settings-wrapper">
     <button
@@ -337,11 +348,64 @@ async function submit(event) {
     return;
   }
 
-  // Admin registration will be connected separately.
-  if (admin) {
-    setMessage("Admin registration will be connected after student registration.");
+  // Admin registration through Supabase Edge Function.
+if (admin) {
+  const { data, error } = await supabase.functions.invoke(
+    "register-admin",
+    {
+      body: {
+        full_name: form.name.trim(),
+        email: form.email.trim(),
+        password: form.password,
+        phone: form.phone.trim(),
+        hostel: form.hostel,
+      },
+    }
+  );
+
+  if (error) {
+  let errorDetails = null;
+
+  try {
+    errorDetails = await error.context?.json();
+  } catch {
+    errorDetails = null;
+  }
+
+  console.error("Admin registration error:", error, errorDetails);
+
+  setMessage(
+    errorDetails?.error ||
+    error.message ||
+    "Admin registration failed."
+  );
+
+  return;
+}
+
+  if (data?.error) {
+    setMessage(data.error);
     return;
   }
+
+  setMessage(
+    data?.message || "Admin registration submitted for approval."
+  );
+
+  setForm({
+    name: "",
+    enrollment: "",
+    phone: "",
+    email: "",
+    hostel: "",
+    block: "",
+    room: "",
+    password: "",
+    confirmPassword: "",
+  });
+
+  return;
+}
 
   // Step 1: Verify the AMU enrollment number.
   const { data: verified, error: verifyError } = await supabase.rpc(
@@ -578,11 +642,15 @@ function LoginPage({ admin = false }) {
     }
 
     // Step 3: Check the account role
-    if (admin && profile.role !== "admin") {
-      await supabase.auth.signOut();
-      setMessage("This account does not have administrator access.");
-      return;
-    }
+    if (
+    admin &&
+    profile.role !== "admin" &&
+    profile.role !== "super_admin"
+    ) {
+    await supabase.auth.signOut();
+    setMessage("This account does not have administrator access.");
+    return;
+  }
 
     if (!admin && profile.role !== "student") {
       await supabase.auth.signOut();
@@ -591,7 +659,11 @@ function LoginPage({ admin = false }) {
     }
 
     // Step 4: Check admin approval
-    if (admin && profile.approval_status !== "approved") {
+    if (
+      admin &&
+      profile.role === "admin" &&
+      profile.approval_status !== "approved"
+    ) {
       await supabase.auth.signOut();
       setMessage("Your admin account is waiting for approval.");
       return;
@@ -600,8 +672,13 @@ function LoginPage({ admin = false }) {
     // Step 5: Login successful
     setMessage("Login successful!");
 
-    window.location.hash = admin ? "#/admin-dashboard" : "#/student-dashboard";
-
+   if (profile.role === "super_admin") {
+   window.location.hash = "#/super-admin-dashboard";
+   } else if (admin) {
+   window.location.hash = "#/admin-dashboard";
+   } else {
+  window.location.hash = "#/student-dashboard";
+  }
   } catch (error) {
     console.error("Login error:", error);
     setMessage("Something went wrong. Please try again.");
@@ -703,6 +780,181 @@ function ForgotPasswordPage() {
   );
 }
 
+
+function SuperAdminDashboard() {
+  const [applications, setApplications] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState("");
+  const [busyAdminId, setBusyAdminId] = useState(null);
+
+  async function loadApplications() {
+    setLoading(true);
+    setMessage("");
+
+    const { data: admins, error: adminsError } = await supabase
+      .from("profiles")
+      .select("id, full_name, email, phone, approval_status, created_at")
+      .eq("role", "admin")
+      .eq("approval_status", "pending")
+      .order("created_at", { ascending: false });
+
+    if (adminsError) {
+      console.error("Could not load admin applications:", adminsError);
+      setMessage(`Could not load applications: ${adminsError.message}`);
+      setApplications([]);
+      setLoading(false);
+      return;
+    }
+
+    if (!admins || admins.length === 0) {
+      setApplications([]);
+      setLoading(false);
+      return;
+    }
+
+    const adminIds = admins.map((admin) => admin.id);
+    const { data: permissions, error: permissionsError } = await supabase
+      .from("admin_permissions")
+      .select("id, hostel, approval_status, can_approve_admins")
+      .in("id", adminIds);
+
+    if (permissionsError) {
+      console.error("Could not load admin permissions:", permissionsError);
+      setMessage(`Applications loaded, but hostel details could not be read: ${permissionsError.message}`);
+      setApplications(admins.map((admin) => ({ ...admin, permission: null })));
+      setLoading(false);
+      return;
+    }
+
+    const permissionById = new Map(
+      (permissions || []).map((permission) => [permission.id, permission])
+    );
+
+    setApplications(
+      admins.map((admin) => ({
+        ...admin,
+        permission: permissionById.get(admin.id) || null,
+      }))
+    );
+    setLoading(false);
+  }
+
+  useEffect(() => {
+    loadApplications();
+  }, []);
+
+  async function handleDecision(adminId, decision) {
+    const action = decision === "approved" ? "approve" : "reject";
+    if (!window.confirm(`Are you sure you want to ${action} this admin application?`)) return;
+
+    setBusyAdminId(adminId);
+    setMessage("");
+
+    const { data, error } = await supabase.rpc("manage_admin_application", {
+      p_admin_id: adminId,
+      p_decision: decision,
+    });
+
+    if (error) {
+      console.error(`Could not ${action} admin:`, error);
+      setMessage(`Could not ${action} this application: ${error.message}`);
+      setBusyAdminId(null);
+      return;
+    }
+
+    if (data?.success === false) {
+      setMessage(data.message || `Could not ${action} this application.`);
+      setBusyAdminId(null);
+      return;
+    }
+
+    setMessage(decision === "approved"
+      ? "Admin application approved successfully."
+      : "Admin application rejected successfully.");
+    setBusyAdminId(null);
+    await loadApplications();
+  }
+
+  async function signOut() {
+    await supabase.auth.signOut();
+    window.location.hash = "#/admin-login";
+  }
+
+  return (
+    <>
+      <Header />
+      <main className="login-page" style={{ display: "block", padding: "40px 5%" }}>
+        <section className="auth-card" style={{ width: "100%", maxWidth: "1100px", margin: "0 auto" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "16px", flexWrap: "wrap", marginBottom: "24px" }}>
+            <div>
+              <span className="eyebrow">HOSTELCARE CONTROL PANEL</span>
+              <h2 style={{ margin: "8px 0" }}>Super Admin Dashboard</h2>
+              <p>Review administrator applications for AMU hostels.</p>
+            </div>
+            <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+              <button className="button button-light" type="button" onClick={loadApplications} disabled={loading || !!busyAdminId}>
+                {loading ? "Refreshing..." : "Refresh"}
+              </button>
+              <button className="button button-primary" type="button" onClick={signOut}>Sign Out</button>
+            </div>
+          </div>
+
+          <div style={{ marginBottom: "20px" }}>
+            <strong>Pending applications: {applications.length}</strong>
+          </div>
+
+          {message && <div className="form-message" role="status" style={{ marginBottom: "18px" }}>{message}</div>}
+
+          {loading ? (
+            <p>Loading admin applications...</p>
+          ) : applications.length === 0 ? (
+            <div className="form-message">There are no pending admin applications.</div>
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "850px" }}>
+                <thead>
+                  <tr style={{ textAlign: "left", borderBottom: "1px solid #ddd" }}>
+                    <th style={{ padding: "12px" }}>Name</th>
+                    <th style={{ padding: "12px" }}>Email</th>
+                    <th style={{ padding: "12px" }}>Phone</th>
+                    <th style={{ padding: "12px" }}>Hostel</th>
+                    <th style={{ padding: "12px" }}>Status</th>
+                    <th style={{ padding: "12px" }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {applications.map((admin) => (
+                    <tr key={admin.id} style={{ borderBottom: "1px solid #eee" }}>
+                      <td style={{ padding: "12px" }}>{admin.full_name}</td>
+                      <td style={{ padding: "12px" }}>{admin.email}</td>
+                      <td style={{ padding: "12px" }}>{admin.phone || "—"}</td>
+                      <td style={{ padding: "12px" }}>{admin.permission?.hostel || "Not available"}</td>
+                      <td style={{ padding: "12px" }}><span className="approval-notice">Pending</span></td>
+                      <td style={{ padding: "12px" }}>
+                        <div style={{ display: "flex", gap: "8px" }}>
+                          <button className="button button-primary" type="button" disabled={!!busyAdminId} onClick={() => handleDecision(admin.id, "approved")}>
+                            {busyAdminId === admin.id ? "Please wait..." : "Approve"}
+                          </button>
+                          <button className="button button-light" type="button" disabled={!!busyAdminId} onClick={() => handleDecision(admin.id, "rejected")}>Reject</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <p style={{ marginTop: "22px", fontSize: "14px", color: "#666" }}>
+            Only the active Super Admin can approve or reject administrator applications.
+          </p>
+        </section>
+      </main>
+      <Footer />
+    </>
+  );
+}
+
 function NotFoundPage() {
   return (
     <>
@@ -727,6 +979,8 @@ function AppRoutes() {
       <Route path="/admin-login" element={<LoginPage admin />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/student-dashboard" element={<StudentDashboard />} />
+      <Route path="/admin-dashboard" element={<AdminDashboard />} />
+      <Route path="/super-admin-dashboard" element={<SuperAdminDashboard />} />
       <Route path="*" element={<NotFoundPage />} />
     </Routes>
   );

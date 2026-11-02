@@ -153,7 +153,54 @@ useEffect(() => {
   }
 
   loadComplaints();
+  }, []);
+   // Real-time complaint status updates
+useEffect(() => {
+  let channel;
+
+  async function subscribeToComplaints() {
+    const {
+      data: { user },
+      error
+    } = await supabase.auth.getUser();
+
+    if (error || !user) return;
+
+    channel = supabase
+      .channel(`student-complaints-${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "complaints",
+          filter: `student_id=eq.${user.id}`,
+        },
+        (payload) => {
+          setComplaints((previous) =>
+            previous.map((complaint) =>
+              complaint.id === payload.new.id
+                ? {
+                    ...complaint,
+                    status: payload.new.status,
+                  }
+                : complaint
+            )
+          );
+        }
+      )
+      .subscribe();
+  }
+
+  subscribeToComplaints();
+
+  return () => {
+    if (channel) {
+      supabase.removeChannel(channel);
+    }
+  };
 }, []);
+   
 
   const totalComplaints = complaints.length;
 
@@ -306,7 +353,7 @@ async function submitComplaint() {
 
   setEditingProfile(false);
   setMessage("Profile updated successfully!");
-}
+}           
 
   // Change Supabase password
   async function changePassword() {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "./lib/supabase";
 import "./AdminDashboard.css";
 
@@ -39,6 +39,9 @@ export default function AdminDashboard() {
   const [passwordBusy, setPasswordBusy] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
+  const sidebarRef = useRef(null);
+  const menuToggleRef = useRef(null);
+  const notificationRef = useRef(null);
 
   const loadDashboard = useCallback(async () => {
     setLoading(true);
@@ -119,6 +122,42 @@ export default function AdminDashboard() {
   useEffect(() => {
     loadDashboard();
   }, [loadDashboard]);
+
+  // Close the mobile sidebar and notification panel when clicking outside them.
+  useEffect(() => {
+    function handleOutsideClick(event) {
+      if (
+        mobileMenuOpen &&
+        sidebarRef.current &&
+        !sidebarRef.current.contains(event.target) &&
+        !menuToggleRef.current?.contains(event.target)
+      ) {
+        setMobileMenuOpen(false);
+      }
+
+      if (
+        showNotifications &&
+        notificationRef.current &&
+        !notificationRef.current.contains(event.target)
+      ) {
+        setShowNotifications(false);
+      }
+    }
+
+    function handleEscape(event) {
+      if (event.key === "Escape") {
+        setMobileMenuOpen(false);
+        setShowNotifications(false);
+      }
+    }
+
+    document.addEventListener("pointerdown", handleOutsideClick);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("pointerdown", handleOutsideClick);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [mobileMenuOpen, showNotifications]);
 
   // Listen for new complaints submitted to this admin's assigned hostel.
   useEffect(() => {
@@ -256,6 +295,14 @@ export default function AdminDashboard() {
     setMobileMenuOpen(false);
   }
 
+  function openComplaint(complaint) {
+    setActivePage("complaints");
+    setSelectedComplaint(complaint);
+    setMessage("");
+    setMobileMenuOpen(false);
+    setShowNotifications(false);
+  }
+
   function renderDashboard() {
     return (
       <>
@@ -300,7 +347,7 @@ export default function AdminDashboard() {
                 <td>{item.block || "—"} / {item.room || "—"}</td>
                 <td>{formatDate(item.created_at)}</td>
                 <td><span className={`admin-status ${statusClass(item.status)}`}>{item.status || "Pending"}</span></td>
-                <td><button className="admin-small-button" onClick={() => setSelectedComplaint(item)}>View</button></td>
+                <td><button className="admin-small-button" onClick={() => openComplaint(item)}>View</button></td>
               </tr>
             ))}
           </tbody>
@@ -388,7 +435,15 @@ export default function AdminDashboard() {
 
   return (
     <div className="admin-dashboard">
-      <aside className={`admin-sidebar ${mobileMenuOpen ? "open" : ""}`}>
+      {mobileMenuOpen && (
+        <button
+          type="button"
+          className="admin-sidebar-backdrop"
+          aria-label="Close navigation menu"
+          onClick={() => setMobileMenuOpen(false)}
+        />
+      )}
+      <aside ref={sidebarRef} className={`admin-sidebar ${mobileMenuOpen ? "open" : ""}`}>
         <div className="admin-brand">
           <img src={`${import.meta.env.BASE_URL}amu-logo.jpg`} alt="AMU logo" />
           <div><h2>HostelCare</h2><p>AMU Hostel Portal</p></div>
@@ -402,9 +457,9 @@ export default function AdminDashboard() {
 
       <div className="admin-main">
         <header className="admin-topbar">
-          <button className="admin-menu-toggle" onClick={() => setMobileMenuOpen((open) => !open)} aria-label="Toggle menu">☰</button>
+          <button ref={menuToggleRef} className="admin-menu-toggle" onClick={() => setMobileMenuOpen((open) => !open)} aria-label="Toggle menu" aria-expanded={mobileMenuOpen}>☰</button>
           <div><strong>{MENU_ITEMS.find((item) => item.id === activePage)?.label || "Dashboard"}</strong><span>{hostel || "HostelCare Admin Portal"}</span></div>
-          <div className="admin-notification-wrap">
+          <div className="admin-notification-wrap" ref={notificationRef}>
             <button
               className="admin-notification-button"
               type="button"

@@ -25,6 +25,9 @@ export default function SuperAdminDashboard() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [passwordBusy, setPasswordBusy] = useState(false);
+  const [approvedAdmins, setApprovedAdmins] = useState([]);
+  const [selectedAdminId, setSelectedAdminId] = useState("");
+  const [transferBusy, setTransferBusy] = useState(false);
 
   const loadApplications = useCallback(async () => {
     setLoading(true);
@@ -245,7 +248,94 @@ export default function SuperAdminDashboard() {
       </>
     );
   }
+  const loadApprovedAdmins = useCallback(async () => {
+  try {
+    const { data: admins, error } = await supabase
+      .from("profiles")
+      .select("id, full_name, email")
+      .eq("role", "admin")
+      .eq("approval_status", "approved");
 
+    if (error) throw error;
+
+    if (!admins?.length) {
+      setApprovedAdmins([]);
+      return;
+    }
+
+    const { data: permissions, error: permissionError } =
+      await supabase
+        .from("admin_permissions")
+        .select("id")
+        .eq("approval_status", "approved")
+        .in("id", admins.map((admin) => admin.id));
+
+    if (permissionError) throw permissionError;
+
+    const approvedIds = new Set(
+      (permissions || []).map((item) => item.id)
+    );
+
+    setApprovedAdmins(
+      admins.filter((admin) => approvedIds.has(admin.id))
+    );
+  } catch (error) {
+    console.error("Could not load approved admins:", error);
+    setMessage(error.message);
+  }
+}, []);
+
+useEffect(() => {
+  if (activePage === "profile") {
+    loadApprovedAdmins();
+  }
+}, [activePage, loadApprovedAdmins]);
+async function handleTransferOwnership() {
+  if (!selectedAdminId) {
+    setMessage("Please select an administrator.");
+    return;
+  }
+
+  const selectedAdmin = approvedAdmins.find(
+    (admin) => admin.id === selectedAdminId
+  );
+
+  if (!selectedAdmin) return;
+
+  const confirmed = window.confirm(
+    `Transfer Super Admin ownership to ${selectedAdmin.full_name}? ` +
+    "Your Super Admin access will be revoked."
+  );
+
+  if (!confirmed) return;
+
+  setTransferBusy(true);
+  setMessage("");
+
+  try {
+    const { data, error } = await supabase.rpc(
+      "transfer_super_admin",
+      { p_new_admin_id: selectedAdminId }
+    );
+
+    if (error) throw error;
+
+    if (data?.success !== true) {
+      throw new Error(data?.message || "Transfer failed.");
+    }
+
+    alert("Super Admin ownership transferred successfully. You will now be signed out.");
+
+    await supabase.auth.signOut();
+    window.location.hash = "#/admin-login";
+
+  } catch (error) {
+    console.error("Ownership transfer error:", error);
+    setMessage(error.message || "Ownership transfer failed.");
+  } finally {
+    setTransferBusy(false);
+  }
+}
   function renderProfile() {
     return (
       <section className="super-admin-panel">
@@ -262,6 +352,51 @@ export default function SuperAdminDashboard() {
           <div><span>Email</span><strong>{superAdmin?.email || "—"}</strong></div>
           <div><span>Phone</span><strong>{superAdmin?.phone || "—"}</strong></div>
           <div><span>Account Role</span><strong>Super Admin</strong></div>
+        </div>
+                <div className="super-admin-transfer-section">
+          <h3>Transfer Super Admin Ownership</h3>
+
+          <p>
+            Transfer complete Super Admin control to another approved
+            administrator. Your current Super Admin access will be revoked.
+          </p>
+
+          {approvedAdmins.length === 0 ? (
+            <div className="super-admin-empty">
+              No other approved administrators available.
+            </div>
+          ) : (
+            <>
+              <label htmlFor="transfer-admin">
+                Select Administrator
+              </label>
+
+              <select
+                id="transfer-admin"
+                value={selectedAdminId}
+                onChange={(event) => setSelectedAdminId(event.target.value)}
+              >
+                <option value="">-- Select an Administrator --</option>
+
+                {approvedAdmins.map((admin) => (
+                  <option key={admin.id} value={admin.id}>
+                    {admin.full_name} ({admin.email})
+                  </option>
+                ))}
+              </select>
+
+              <button
+                type="button"
+                className="super-admin-transfer-button"
+                onClick={handleTransferOwnership}
+                disabled={!selectedAdminId || transferBusy}
+              >
+                {transferBusy
+                  ? "Transferring..."
+                  : "Transfer Super Admin Ownership"}
+              </button>
+            </>
+          )}
         </div>
       </section>
     );

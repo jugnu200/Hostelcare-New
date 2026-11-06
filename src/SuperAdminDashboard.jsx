@@ -17,6 +17,7 @@ function formatDate(value) {
 export default function SuperAdminDashboard() {
   const [superAdmin, setSuperAdmin] = useState(null);
   const [applications, setApplications] = useState([]);
+  const [totalAdmins, setTotalAdmins] = useState(0);
   const [activePage, setActivePage] = useState("applications");
   const [loading, setLoading] = useState(true);
   const [busyAdminId, setBusyAdminId] = useState(null);
@@ -67,6 +68,31 @@ export default function SuperAdminDashboard() {
         .order("created_at", { ascending: false });
 
       if (adminsError) throw adminsError;
+
+      // Count approved administrators (excluding the Super Admin account).
+      const { data: approvedAdminRows, error: approvedAdminsError } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("role", "admin")
+        .eq("approval_status", "approved");
+
+      if (approvedAdminsError) throw approvedAdminsError;
+
+      let approvedAdminCount = 0;
+      const approvedIds = (approvedAdminRows || []).map((admin) => admin.id);
+
+      if (approvedIds.length) {
+        const { data: approvedPermissionRows, error: approvedPermissionsError } = await supabase
+          .from("admin_permissions")
+          .select("id")
+          .eq("approval_status", "approved")
+          .in("id", approvedIds);
+
+        if (approvedPermissionsError) throw approvedPermissionsError;
+        approvedAdminCount = (approvedPermissionRows || []).length;
+      }
+
+      setTotalAdmins(approvedAdminCount);
 
       const adminIds = (admins || []).map((admin) => admin.id);
       let permissions = [];
@@ -188,6 +214,9 @@ export default function SuperAdminDashboard() {
         <div className="super-admin-stats">
           <div className="super-admin-stat-card">
             <span>▤</span><strong>{applications.length}</strong><small>Pending Applications</small>
+          </div>
+          <div className="super-admin-stat-card">
+            <span>♙</span><strong>{totalAdmins}</strong><small>Total Approved Admins</small>
           </div>
         </div>
 

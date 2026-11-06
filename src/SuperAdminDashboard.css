@@ -138,7 +138,7 @@
 }
 .super-admin-outline-button { background: #fff; color: #17683e; border: 1px solid #cfe0d3; }
 .super-admin-outline-button:disabled, .super-admin-primary-button:disabled { opacity: .6; cursor: wait; }
-.super-admin-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-bottom: 25px; }
+.super-admin-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 25px; }
 .super-admin-stat-card {
   grid-column: span 1;
   min-height: 125px;
@@ -209,7 +209,6 @@
 @media (max-width: 1050px) {
   .super-admin-sidebar { width: 225px; min-width: 225px; }
   .super-admin-content { padding: 22px; }
-  .super-admin-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 700px) {
   .super-admin-dashboard { display: block; }
@@ -307,3 +306,7 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+/* Keep both dashboard statistic cards side by side on mobile. */
+.super-admin-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.super-admin-stat-card { min-width: 0; padding: 16px 8px; }
+.super-admin-stat-card small { text-align: center; line-height: 1.35; }
